@@ -16,8 +16,8 @@ for the full 10-module design.
 | 3. Cloth Simulation | Headless Blender draping | ✅ implemented² |
 | 4. Post-Processing & Export | UVs, normals, bone weights | ✅ implemented³ |
 | 5. Variant System | Batch generation + PCA compression | ✅ implemented⁴ |
-| 6. Learned Deformation | TailorNet-style pose-conditioned net | ⬜ planned |
-| 7. Game Engine Integration | Customization, ONNX inference | ⬜ planned |
+| 6. Learned Deformation | TailorNet-style pose-conditioned net | ✅ implemented⁵ |
+| 7. Game Engine Integration | Customization, ONNX inference | ✅ implemented⁶ |
 | 8–10. AI extensions | Pattern gen, fabric prediction, diff. fitting | ⬜ optional |
 
 ¹ Module 2's geometry (landmark lookup, waist segments, placement math) is
@@ -41,6 +41,15 @@ decimation are Blender-side (`postprocess/blender_post.py`, lazy `bpy`).
 
 ⁴ Module 5 is pure numpy — PCA is computed via SVD, so **scikit-learn is not
 required**. Only the optional blend-shape exporter touches Blender.
+
+⁵ Module 6's dataset assembly, pose sampling, and a **pure-numpy inference
+runtime** (`NumpyMLP`) are implemented and tested. The network and training/ONNX
+export use PyTorch (lazy import); training exports both ONNX and a numpy weight
+file, so inference runs with neither torch nor onnxruntime.
+
+⁶ Module 7 is pure numpy and fully tested: two deformation paths (PCA blend
+shapes / learned offsets), body masking + layering, texture customization, and
+wardrobe management. Only `ONNXDeformer` needs an external runtime (lazy import).
 
 ## Install
 
@@ -168,6 +177,42 @@ to produce a `variants.npz`, then `scripts/build_pca_basis.py` to fit the basis.
 PCA components can be exported as engine blend shapes via `blend_shape_targets` /
 `export_pca_as_blend_shapes`. Variants must share topology, so vary continuous
 parameters and keep structural ones (panel count, subdivision level) fixed.
+
+## Learned deformation (Module 6)
+
+Train a small pose-conditioned MLP on simulated drapes; at runtime it predicts
+vertex offsets in well under a millisecond — no physics solver:
+
+```python
+from parametric_cloth.deformation import DeformationDataset, train_deformation_model, export_to_npz
+
+ds = DeformationDataset.load("data/training/tshirt.npz")   # built by the Blender script
+result = train_deformation_model(ds, n_epochs=200)          # needs torch
+export_to_npz(result, "models/tshirt.npz")                  # for the numpy runtime
+```
+
+`scripts/generate_training_data.py` (Blender) drapes the garment across AMASS
+poses and body shapes; `scripts/train_deformation.py` trains and exports ONNX +
+npz. The `NumpyMLP` runtime loads the npz and runs inference with no torch.
+
+## Runtime customization (Module 7)
+
+```python
+from parametric_cloth.engine import (PCADeformer, RuntimeGarment, DeformState,
+                                      Wardrobe, resolve_visible_regions)
+
+skirt = RuntimeGarment("skirt", PCADeformer(library.basis), regions={"hips", "legs"}, layer=1)
+jacket = RuntimeGarment("jacket", PCADeformer(library.basis), regions={"torso", "arms"}, layer=3)
+mesh = skirt.deform(DeformState(pca_coefficients=library.variants["variant_0"]))
+visible = resolve_visible_regions([skirt.coverage(), jacket.coverage()])  # layering occlusion
+
+w = Wardrobe(); w.equip("bottom", "skirt"); w.equip("outerwear", "jacket")
+```
+
+Two paths share one `deform(DeformState)` interface — `PCADeformer` (blend
+shapes) or `LearnedDeformer`/`ONNXDeformer` (pose-conditioned offsets) — so the
+engine can swap them. Plus body masking/layering, texture customization
+(`apply_customization`), and `benchmark` for the per-garment budget.
 
 ## Data model
 
