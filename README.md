@@ -12,7 +12,7 @@ for the full 10-module design.
 | Module | Description | Status |
 |--------|-------------|--------|
 | 1. Pattern Definition | Parametric data model, fabric presets, templates | ✅ implemented |
-| 2. Avatar System | SMPL-X parametric body + landmarks | ⬜ planned |
+| 2. Avatar System | SMPL-X parametric body + landmarks | ✅ implemented¹ |
 | 3. Cloth Simulation | Headless Blender draping | ⬜ planned |
 | 4. Post-Processing & Export | UVs, normals, bone weights | ⬜ planned |
 | 5. Variant System | Batch generation + PCA compression | ⬜ planned |
@@ -20,11 +20,19 @@ for the full 10-module design.
 | 7. Game Engine Integration | Customization, ONNX inference | ⬜ planned |
 | 8–10. AI extensions | Pattern gen, fabric prediction, diff. fitting | ⬜ optional |
 
+¹ Module 2's geometry (landmark lookup, waist segments, placement math) is
+implemented and unit-tested with numpy. SMPL-X mesh generation needs the
+`smplx`/`torch` packages plus model weights, and the placement *binding* needs
+Blender (`bpy`) — both imported lazily. The landmark vertex indices are
+**provisional** until confirmed with `scripts/verify_landmarks.py` (see
+`LANDMARKS_VERIFIED`).
+
 ## Install
 
 ```bash
-pip install -e .          # core (Module 1, pure standard library)
-pip install -e ".[dev]"   # + pytest
+pip install -e .            # core (Module 1, pure standard library)
+pip install -e ".[dev]"     # + pytest
+pip install -e ".[avatar]"  # Module 2: numpy + smplx + torch + trimesh
 ```
 
 ## Quick start
@@ -59,6 +67,23 @@ create-garment --type cape --fabric wool --output cape.json
 
 The emitted JSON is the interchange format consumed by later pipeline stages
 (e.g. the Blender simulation script in Module 3).
+
+## Avatar & placement (Module 2)
+
+```python
+from parametric_cloth import create_skirt
+from parametric_cloth.avatar import generate_smplx_avatar, place_garment
+
+avatar = generate_smplx_avatar("athletic")     # needs smplx + weights
+skirt = create_skirt(panels=6)
+transforms = place_garment(skirt, avatar)       # piece_name -> world transform
+```
+
+`place_garment` resolves each piece's `PlacementHint`: landmark anchors come
+from the body mesh, and skirt `waist_segment_*` anchors are auto-computed by
+slicing the body at waist height. The result is a posed starting state for the
+Module 3 simulation. The geometry runs on any `AvatarMesh` (vertices + faces),
+so it is testable without SMPL-X.
 
 ## Data model
 
