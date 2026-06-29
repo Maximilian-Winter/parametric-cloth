@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parametric-cloth"
+version = "0.1.0"
+description = "A pipeline for generating 3D clothing from parametric 2D sewing patterns."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Maximilian Winter" }]
+keywords = ["cloth", "simulation", "sewing-pattern", "smplx", "gamedev"]
+
+# Module 1 is pure standard library. Heavier modules (simulation, learning)
+# add their own optional dependency groups below as they are implemented.
+dependencies = []
+
+[project.optional-dependencies]
+# Module 2 geometry core needs numpy; the SMPL-X generator/export add the rest.
+avatar = ["numpy>=1.24", "smplx>=0.1.28", "torch>=2.0", "trimesh>=4.0"]
+# Module 5 (PCA variant system) and beyond.
+numeric = ["numpy>=1.24", "scipy>=1.10", "scikit-learn>=1.3"]
+# Module 6 (learned deformation).
+learning = ["torch>=2.0", "onnx>=1.15", "onnxruntime>=1.17"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+create-garment = "parametric_cloth.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

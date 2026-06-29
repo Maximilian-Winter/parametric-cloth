@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Pipeline artifacts (large binary outputs)
+output/
+avatars/
+*.fbx
+*.glb
+*.npz
+*.onnx
