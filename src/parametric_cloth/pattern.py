@@ -13,6 +13,23 @@ from typing import List, Optional
 from .fabric import FabricProperties
 
 
+def _orient(p, q, r) -> float:
+    """Signed area of triangle pqr; sign gives turn direction."""
+    return (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
+
+
+def _segments_properly_cross(p1, p2, p3, p4, *, eps: float = 1e-12) -> bool:
+    """True if segment p1p2 and p3p4 cross at an interior point of both."""
+    d1 = _orient(p3, p4, p1)
+    d2 = _orient(p3, p4, p2)
+    d3 = _orient(p1, p2, p3)
+    d4 = _orient(p1, p2, p4)
+    return (
+        ((d1 > eps and d2 < -eps) or (d1 < -eps and d2 > eps))
+        and ((d3 > eps and d4 < -eps) or (d3 < -eps and d4 > eps))
+    )
+
+
 @dataclass
 class PatternVertex:
     """A point on a 2D pattern piece, in centimeters."""
@@ -110,8 +127,28 @@ class PatternPiece:
         if self.subdivisions < 0:
             issues.append(f"piece '{self.name}' has negative subdivisions")
 
+        if self._is_self_intersecting():
+            issues.append(
+                f"piece '{self.name}' is self-intersecting (edges cross); "
+                f"check vertex ordering"
+            )
+
         issues.extend(self.fabric.validate())
         return issues
+
+    def _is_self_intersecting(self) -> bool:
+        """True if any pair of non-adjacent polygon edges properly cross."""
+        verts = self.vertices
+        n = len(verts)
+        for i in range(n):
+            a1, a2 = verts[i], verts[(i + 1) % n]
+            for j in range(i + 1, n):
+                if j == i or j == (i + 1) % n or (j + 1) % n == i:
+                    continue  # adjacent edges share an endpoint
+                b1, b2 = verts[j], verts[(j + 1) % n]
+                if _segments_properly_cross(a1, a2, b1, b2):
+                    return True
+        return False
 
 
 @dataclass

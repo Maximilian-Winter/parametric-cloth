@@ -13,7 +13,7 @@ for the full 10-module design.
 |--------|-------------|--------|
 | 1. Pattern Definition | Parametric data model, fabric presets, templates | ✅ implemented |
 | 2. Avatar System | SMPL-X parametric body + landmarks | ✅ implemented¹ |
-| 3. Cloth Simulation | Headless Blender draping | ⬜ planned |
+| 3. Cloth Simulation | Headless Blender draping | ✅ implemented² |
 | 4. Post-Processing & Export | UVs, normals, bone weights | ⬜ planned |
 | 5. Variant System | Batch generation + PCA compression | ⬜ planned |
 | 6. Learned Deformation | TailorNet-style pose-conditioned net | ⬜ planned |
@@ -26,6 +26,14 @@ implemented and unit-tested with numpy. SMPL-X mesh generation needs the
 Blender (`bpy`) — both imported lazily. The landmark vertex indices are
 **provisional** until confirmed with `scripts/verify_landmarks.py` (see
 `LANDMARKS_VERIFIED`).
+
+² Module 3's geometry pipeline — tessellation (ear clipping + subdivision),
+seam-vertex correspondence, garment assembly, result validation, and the
+fabric→solver mapping — is implemented and unit-tested with numpy. The headless
+Blender driver (`simulation/blender_sim.py`, run via
+`scripts/simulate_garment.py`) needs `bpy` and is exercised inside Blender. It is
+built entirely on the tested pure modules: Blender just uploads the assembled
+mesh, welds the precomputed seam pairs, runs the solver, and exports.
 
 ## Install
 
@@ -84,6 +92,33 @@ from the body mesh, and skirt `waist_segment_*` anchors are auto-computed by
 slicing the body at waist height. The result is a posed starting state for the
 Module 3 simulation. The geometry runs on any `AvatarMesh` (vertices + faces),
 so it is testable without SMPL-X.
+
+## Cloth simulation (Module 3)
+
+The geometry pipeline runs without Blender:
+
+```python
+from parametric_cloth import create_skirt
+from parametric_cloth.avatar import generate_smplx_avatar, place_garment
+from parametric_cloth.simulation import assemble_garment, SimulationConfig
+
+skirt = create_skirt(panels=4)
+avatar = generate_smplx_avatar("average")
+transforms = place_garment(skirt, avatar)
+assembled = assemble_garment(skirt, transforms, levels=2)
+# -> assembled.vertices/faces (one welded cloth mesh) + assembled.seam_pairs
+```
+
+The actual draping runs headless in Blender:
+
+```bash
+blender --background --python scripts/simulate_garment.py -- \
+    --garment skirt.json --avatar smplx_average.obj --output output/skirt.fbx
+```
+
+It places the pieces, assembles + welds them, runs the solver, validates the
+result (detecting explosions/NaNs), and retries with progressively higher
+damping on failure (`SimulationConfig.damping_schedule`).
 
 ## Data model
 

@@ -88,18 +88,21 @@ def create_tshirt(
     w = chest_half_width * ease
     fab = FabricProperties.from_preset(fabric)
 
+    # Vertices wind around the boundary so the polygon stays simple (no
+    # self-intersection): bottom hem -> right side -> right shoulder -> neckline
+    # (right to left) -> left shoulder -> left side.
     front = PatternPiece(
         name="front",
         vertices=[
-            PatternVertex(0, 0),
-            PatternVertex(w, 0),
-            PatternVertex(w, length),
-            PatternVertex(w - shoulder_width, length),
-            PatternVertex(w / 2 + neck_width / 2, length - neck_depth_front * 0.3),
-            PatternVertex(w / 2, length - neck_depth_front),
-            PatternVertex(w / 2 - neck_width / 2, length - neck_depth_front * 0.3),
-            PatternVertex(shoulder_width, length),
-            PatternVertex(0, length),
+            PatternVertex(0, 0),                                              # 0 hem left
+            PatternVertex(w, 0),                                             # 1 hem right
+            PatternVertex(w, length),                                        # 2 top right
+            PatternVertex(shoulder_width, length),                          # 3 right shoulder
+            PatternVertex(w / 2 + neck_width / 2, length - neck_depth_front * 0.3),  # 4 neck right
+            PatternVertex(w / 2, length - neck_depth_front),                 # 5 neck bottom
+            PatternVertex(w / 2 - neck_width / 2, length - neck_depth_front * 0.3),  # 6 neck left
+            PatternVertex(w - shoulder_width, length),                      # 7 left shoulder
+            PatternVertex(0, length),                                        # 8 top left
         ],
         placement=PlacementHint(anchor="chest_front", offset_normal=3.0),
         fabric=fab,
@@ -109,15 +112,15 @@ def create_tshirt(
     back = PatternPiece(
         name="back",
         vertices=[
-            PatternVertex(0, 0),
-            PatternVertex(w, 0),
-            PatternVertex(w, length),
-            PatternVertex(w - shoulder_width, length),
-            PatternVertex(w / 2 + neck_width / 2, length - neck_depth_back * 0.3),
-            PatternVertex(w / 2, length - neck_depth_back),
-            PatternVertex(w / 2 - neck_width / 2, length - neck_depth_back * 0.3),
-            PatternVertex(shoulder_width, length),
-            PatternVertex(0, length),
+            PatternVertex(0, 0),                                             # 0 hem left
+            PatternVertex(w, 0),                                            # 1 hem right
+            PatternVertex(w, length),                                       # 2 top right
+            PatternVertex(shoulder_width, length),                         # 3 right shoulder
+            PatternVertex(w / 2 + neck_width / 2, length - neck_depth_back * 0.3),  # 4 neck right
+            PatternVertex(w / 2, length - neck_depth_back),                 # 5 neck bottom
+            PatternVertex(w / 2 - neck_width / 2, length - neck_depth_back * 0.3),  # 6 neck left
+            PatternVertex(w - shoulder_width, length),                     # 7 left shoulder
+            PatternVertex(0, length),                                       # 8 top left
         ],
         placement=PlacementHint(anchor="chest_back", offset_normal=3.0),
         fabric=fab,
@@ -151,12 +154,15 @@ def create_tshirt(
     )
 
     seams = [
-        Seam(edge_a=SeamEdge("front", 0, 8), edge_b=SeamEdge("back", 0, 8)),
-        Seam(edge_a=SeamEdge("front", 1, 2), edge_b=SeamEdge("back", 1, 2)),
-        Seam(edge_a=SeamEdge("front", 2, 3), edge_b=SeamEdge("back", 2, 3)),
-        Seam(edge_a=SeamEdge("front", 7, 8), edge_b=SeamEdge("back", 7, 8)),
-        Seam(edge_a=SeamEdge("left_sleeve", 2, 3), edge_b=SeamEdge("front", 3, 2)),
-        Seam(edge_a=SeamEdge("right_sleeve", 2, 3), edge_b=SeamEdge("back", 3, 2)),
+        # Body: two side seams and two shoulder seams join front to back.
+        Seam(edge_a=SeamEdge("front", 0, 8), edge_b=SeamEdge("back", 0, 8)),  # left side
+        Seam(edge_a=SeamEdge("front", 1, 2), edge_b=SeamEdge("back", 1, 2)),  # right side
+        Seam(edge_a=SeamEdge("front", 2, 3), edge_b=SeamEdge("back", 2, 3)),  # right shoulder
+        Seam(edge_a=SeamEdge("front", 7, 8), edge_b=SeamEdge("back", 7, 8)),  # left shoulder
+        # Sleeve caps attach at the shoulders. The simplified rectangular sleeve
+        # has no dedicated armhole edge, so this attachment is approximate.
+        Seam(edge_a=SeamEdge("left_sleeve", 2, 3), edge_b=SeamEdge("front", 7, 8)),
+        Seam(edge_a=SeamEdge("right_sleeve", 2, 3), edge_b=SeamEdge("back", 2, 3)),
     ]
 
     return GarmentDefinition(

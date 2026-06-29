@@ -89,6 +89,24 @@ def test_square_area_is_correct():
     assert not square.validate()
 
 
+def test_self_intersecting_piece_flagged():
+    # A "bowtie" quad whose edges cross.
+    piece = PatternPiece(
+        name="bowtie",
+        vertices=[
+            PatternVertex(0, 0), PatternVertex(10, 10),
+            PatternVertex(10, 0), PatternVertex(0, 10),
+        ],
+    )
+    assert any("self-intersecting" in i for i in piece.validate())
+
+
+def test_tshirt_panels_are_simple_polygons():
+    shirt = create_tshirt()
+    for piece in shirt.pieces:
+        assert not piece._is_self_intersecting(), piece.name
+
+
 def test_coincident_vertices_flagged():
     piece = PatternPiece(
         name="dupe",
