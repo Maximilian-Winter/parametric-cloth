@@ -15,7 +15,7 @@ for the full 10-module design.
 | 2. Avatar System | SMPL-X parametric body + landmarks | ✅ implemented¹ |
 | 3. Cloth Simulation | Headless Blender draping | ✅ implemented² |
 | 4. Post-Processing & Export | UVs, normals, bone weights | ✅ implemented³ |
-| 5. Variant System | Batch generation + PCA compression | ⬜ planned |
+| 5. Variant System | Batch generation + PCA compression | ✅ implemented⁴ |
 | 6. Learned Deformation | TailorNet-style pose-conditioned net | ⬜ planned |
 | 7. Game Engine Integration | Customization, ONNX inference | ⬜ planned |
 | 8–10. AI extensions | Pattern gen, fabric prediction, diff. fitting | ⬜ optional |
@@ -38,6 +38,9 @@ mesh, welds the precomputed seam pairs, runs the solver, and exports.
 ³ Module 4's UV-from-pattern atlas packing, layout reference (SVG), and package
 metadata are pure numpy and unit-tested. Normal baking, bone-weight transfer, and
 decimation are Blender-side (`postprocess/blender_post.py`, lazy `bpy`).
+
+⁴ Module 5 is pure numpy — PCA is computed via SVD, so **scikit-learn is not
+required**. Only the optional blend-shape exporter touches Blender.
 
 ## Install
 
@@ -143,6 +146,28 @@ bone-weight transfer (Surface Deform), decimation, and the final
 `mesh.fbx` + `normal.png`. Pass `--package-dir` to `simulate_garment.py` to run
 the whole draping→package flow at once. UVs are assigned from the pattern
 *before* seam welding, so the merge produces correct panel-boundary UV seams.
+
+## Variant system (Module 5)
+
+Compress a whole family of garment variants into one PCA basis plus a few
+coefficients each — continuous variation at the storage cost of a handful of
+shapes:
+
+```python
+from parametric_cloth.variants import latin_hypercube, build_variant_library
+
+samples = latin_hypercube({"flare": (1.0, 2.2), "length": (40, 70)}, 20, seed=7)
+library = build_variant_library(samples, simulate, n_components=8)  # simulate: params -> (V,3)
+library.save("garments/skirt")     # pca_basis.npz + variants/*.json + metadata.json
+mesh = library.reconstruct("variant_3")
+```
+
+`simulate` is injected (the real draping pipeline in production, a synthetic
+deformer in tests). Offline you can also run `scripts/batch_simulate.py` (Blender)
+to produce a `variants.npz`, then `scripts/build_pca_basis.py` to fit the basis.
+PCA components can be exported as engine blend shapes via `blend_shape_targets` /
+`export_pca_as_blend_shapes`. Variants must share topology, so vary continuous
+parameters and keep structural ones (panel count, subdivision level) fixed.
 
 ## Data model
 
