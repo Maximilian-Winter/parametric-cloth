@@ -14,7 +14,7 @@ for the full 10-module design.
 | 1. Pattern Definition | Parametric data model, fabric presets, templates | ✅ implemented |
 | 2. Avatar System | SMPL-X parametric body + landmarks | ✅ implemented¹ |
 | 3. Cloth Simulation | Headless Blender draping | ✅ implemented² |
-| 4. Post-Processing & Export | UVs, normals, bone weights | ⬜ planned |
+| 4. Post-Processing & Export | UVs, normals, bone weights | ✅ implemented³ |
 | 5. Variant System | Batch generation + PCA compression | ⬜ planned |
 | 6. Learned Deformation | TailorNet-style pose-conditioned net | ⬜ planned |
 | 7. Game Engine Integration | Customization, ONNX inference | ⬜ planned |
@@ -34,6 +34,10 @@ Blender driver (`simulation/blender_sim.py`, run via
 `scripts/simulate_garment.py`) needs `bpy` and is exercised inside Blender. It is
 built entirely on the tested pure modules: Blender just uploads the assembled
 mesh, welds the precomputed seam pairs, runs the solver, and exports.
+
+³ Module 4's UV-from-pattern atlas packing, layout reference (SVG), and package
+metadata are pure numpy and unit-tested. Normal baking, bone-weight transfer, and
+decimation are Blender-side (`postprocess/blender_post.py`, lazy `bpy`).
 
 ## Install
 
@@ -119,6 +123,26 @@ blender --background --python scripts/simulate_garment.py -- \
 It places the pieces, assembles + welds them, runs the solver, validates the
 result (detecting explosions/NaNs), and retries with progressively higher
 damping on failure (`SimulationConfig.damping_schedule`).
+
+## Post-processing & export (Module 4)
+
+Because each mesh vertex carries its original 2D pattern coordinate, the pattern
+*is* the UV map — no unwrapping. The atlas packing, layout reference image, and
+metadata are pure:
+
+```python
+from parametric_cloth.postprocess import pack_uv_atlas, write_package
+
+atlas = pack_uv_atlas(assembled)        # each panel -> a UV island, aspect-preserved
+pkg = write_package("garments/skirt", skirt, assembled, atlas=atlas)
+# -> garments/skirt/{metadata.json, uv_layout.svg}
+```
+
+The Blender step (`postprocess/blender_post.py`) adds normal-map baking,
+bone-weight transfer (Surface Deform), decimation, and the final
+`mesh.fbx` + `normal.png`. Pass `--package-dir` to `simulate_garment.py` to run
+the whole draping→package flow at once. UVs are assigned from the pattern
+*before* seam welding, so the merge produces correct panel-boundary UV seams.
 
 ## Data model
 

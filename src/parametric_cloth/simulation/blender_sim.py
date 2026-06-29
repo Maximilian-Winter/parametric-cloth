@@ -161,13 +161,20 @@ def simulate_garment(
     avatar_path: str,
     output_path: str,
     config: SimulationConfig | None = None,
+    *,
+    package_dir: str | None = None,
+    parameters: dict | None = None,
 ) -> bool:
     """Full draping run with conservative-retry on simulation explosions.
 
     Returns True if a valid result was exported, False if every retry exploded.
+    If ``package_dir`` is given, also writes a full Module 4 export package
+    (decimated mesh + baked normal map + UV layout + metadata) on success.
     """
     from ..avatar.placement import place_garment
     from ..avatar.placement import avatar_mesh_from_bpy
+    from ..postprocess.uv import pack_uv_atlas
+    from ..postprocess.blender_post import assign_uv_layer, export_garment_package
 
     config = config or SimulationConfig()
 
@@ -182,6 +189,10 @@ def simulate_garment(
         )
 
         obj = build_cloth_object(assembled)
+        # UVs come straight from the 2D pattern; assign before welding so the
+        # per-loop UVs survive the merge as proper panel-boundary UV seams.
+        atlas = pack_uv_atlas(assembled)
+        assign_uv_layer(obj, atlas.uv)
         weld_seams(obj, assembled)
 
         # All pieces currently share one fabric; use the first piece's.
@@ -199,6 +210,12 @@ def simulate_garment(
             export_garment(obj, output_path)
             print(f"[ok] {garment.name}: exported to {output_path} "
                   f"(attempt {attempt + 1}, damping x{damping_mult})")
+            if package_dir:
+                export_garment_package(
+                    obj, avatar, garment, assembled, package_dir,
+                    atlas=atlas, parameters=parameters,
+                )
+                print(f"[ok] {garment.name}: package written to {package_dir}")
             return True
 
         print(f"[retry] {garment.name}: attempt {attempt + 1} invalid: "

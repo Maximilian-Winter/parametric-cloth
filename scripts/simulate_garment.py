@@ -46,6 +46,8 @@ def main() -> int:
     parser.add_argument("--garment", required=True, help="garment JSON path")
     parser.add_argument("--avatar", required=True, help="avatar mesh (obj/glb/fbx)")
     parser.add_argument("--output", required=True, help="output mesh (fbx/glb)")
+    parser.add_argument("--package-dir", default=None,
+                        help="if set, also write the full Module 4 export package")
     parser.add_argument("--frames", type=int, default=250)
     parser.add_argument("--subdivide-levels", type=int, default=2)
     parser.add_argument("--max-retries", type=int, default=3)
@@ -62,7 +64,8 @@ def main() -> int:
         subdivide_levels=args.subdivide_levels,
         max_retries=args.max_retries,
     )
-    ok = simulate_garment(garment, args.avatar, args.output, config)
+    ok = simulate_garment(garment, args.avatar, args.output, config,
+                          package_dir=args.package_dir)
     return 0 if ok else 2
 
 

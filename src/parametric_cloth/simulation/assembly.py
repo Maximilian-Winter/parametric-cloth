@@ -39,10 +39,16 @@ class AssembledGarment:
     faces: np.ndarray                 # (F, 3) int, global indices
     seam_pairs: list[tuple[int, int]]  # global vertex index pairs to weld
     piece_offsets: dict[str, tuple[int, int]]  # name -> (start, end) global range
+    pattern_uv: np.ndarray            # (V, 2) cm, the original flat pattern coord
+    vertex_panel: np.ndarray          # (V,) int, source panel index per vertex
 
     @property
     def n_vertices(self) -> int:
         return int(self.vertices.shape[0])
+
+    @property
+    def n_panels(self) -> int:
+        return len(self.piece_offsets)
 
     def seam_gap(self) -> float:
         """Mean distance between welded pairs (meters); ~0 once merged."""
@@ -75,11 +81,13 @@ def assemble_garment(
     transforms = transforms or {}
     all_vertices: list[np.ndarray] = []
     all_faces: list[np.ndarray] = []
+    all_uv: list[np.ndarray] = []
+    all_panel: list[np.ndarray] = []
     placed: dict[str, _PlacedPiece] = {}
     piece_offsets: dict[str, tuple[int, int]] = {}
     cursor = 0
 
-    for piece in garment.pieces:
+    for panel_index, piece in enumerate(garment.pieces):
         mesh = tessellate_piece(piece, levels=levels)
 
         if piece.name in transforms:
@@ -95,6 +103,8 @@ def assemble_garment(
 
         all_vertices.append(world)
         all_faces.append(mesh.faces + cursor)
+        all_uv.append(mesh.vertices.copy())                  # flat pattern coords (cm)
+        all_panel.append(np.full(mesh.n_vertices, panel_index, dtype=np.int64))
         placed[piece.name] = _PlacedPiece(
             mesh=mesh, offset=cursor, loop=boundary_loop(mesh.faces)
         )
@@ -103,6 +113,8 @@ def assemble_garment(
 
     vertices = np.vstack(all_vertices) if all_vertices else np.zeros((0, 3))
     faces = np.vstack(all_faces) if all_faces else np.zeros((0, 3), dtype=np.int64)
+    pattern_uv = np.vstack(all_uv) if all_uv else np.zeros((0, 2))
+    vertex_panel = np.concatenate(all_panel) if all_panel else np.zeros(0, dtype=np.int64)
 
     seam_pairs = _resolve_seam_pairs(garment, placed, vertices)
 
@@ -112,6 +124,8 @@ def assemble_garment(
         faces=faces,
         seam_pairs=seam_pairs,
         piece_offsets=piece_offsets,
+        pattern_uv=pattern_uv,
+        vertex_panel=vertex_panel,
     )
 
 
