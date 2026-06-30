@@ -20,7 +20,7 @@ for the full 10-module design.
 | 7. Game Engine Integration | Customization, ONNX inference | ✅ implemented⁶ |
 | 8. AI Pattern Generation | Photo/sketch/text → sewing pattern | ✅ implemented⁸ |
 | 9. AI Fabric Prediction | Text description → simulation parameters | ✅ implemented⁷ |
-| 10. Differentiable Fitting | Auto-refine patterns to match target | ⬜ optional |
+| 10. Differentiable Fitting | Auto-refine patterns to match target | ✅ implemented⁹ |
 
 ¹ Module 2's geometry (landmark lookup, waist segments, placement math) is
 implemented and unit-tested with numpy. SMPL-X mesh generation needs the
@@ -61,6 +61,13 @@ wardrobe management. Only `ONNXDeformer` needs an external runtime (lazy import)
 The real SewFormer/ChatGarment backends need model weights not available here —
 `PatternGenerator` takes `backend=` as an injectable callable, so the
 orchestration (validation, GarmentCode conversion) is tested without them.
+
+⁹ No production differentiable-physics/-rendering framework (Warp, Taichi,
+DiffCloth, nvdiffrast, PyTorch3D) is available here, so Module 10 implements its
+own differentiable mass-spring simulator and soft-splat silhouette renderer in
+plain NumPy — gradients are hand-derived (not autodiff-generated) and verified
+against central finite differences. See the section below for what that buys
+and where it falls short of a production backend.
 
 ## Install
 
@@ -271,6 +278,60 @@ the format SewFormer/ChatGarment outputs and GarmentCodeData uses. Note: full
 *programmatic* GarmentCode — panels defined by parametric edge generators —
 needs `pygarment` to evaluate; this adapter operates on the already-evaluated
 form.
+
+## Differentiable physics fitting (Module 10)
+
+Automatically refines a pattern piece's vertex positions to match a target
+silhouette or 3D scan, by backpropagating through a draping simulation:
+
+```python
+from parametric_cloth.fitting import DifferentiableClothFitter
+import numpy as np
+
+fitter = DifferentiableClothFitter(n_sim_steps=12, stiffness=40.0, regularization=0.001)
+fitted_garment = fitter.fit_to_3d_scan(garment, target_scan_vertices, piece_name="cape", n_iterations=200)
+```
+
+With no `torch`/Warp/Taichi/nvdiffrast/PyTorch3D available, this package
+implements its own differentiable physics from scratch:
+
+- **`DifferentiableMassSpring`** — a force-based mass-spring solver (semi-implicit
+  Euler) with a hand-derived reverse-mode gradient (the same chain-rule math an
+  autodiff framework would generate, written out by hand). Rest lengths are
+  computed fresh from the initial positions each call, so gradients correctly
+  flow through panel *scale*, not just post-drape position. Verified against
+  central finite differences to ~1e-10 on random spring systems and a real
+  tessellated panel.
+- **`SoftSplatRenderer`** — a simplified differentiable silhouette renderer:
+  orthographic projection + Gaussian point splatting, also with a hand-derived
+  gradient. Not a full differentiable rasterizer (no triangle coverage,
+  occlusion, or anti-aliasing) — it's a lightweight stand-in for
+  nvdiffrast/PyTorch3D sufficient to fit a rough silhouette.
+- **`chamfer_distance_and_grad`** — symmetric Chamfer distance with an analytic
+  gradient, for fitting against a 3D scan/point cloud.
+- A from-scratch **Adam** optimizer (trivial once gradients are analytic).
+
+Pinned vertices (the pattern's attachment edge, e.g. a waistband or neckline —
+configurable via `pin="min_y"`/`"max_y"`/explicit indices) are frozen both
+during simulation *and* in the optimizer, so fitting reshapes the panel without
+relocating its anchor.
+
+**Honest characterization from testing this end-to-end:** the Chamfer/3D-scan
+path converges robustly even from a very different starting shape (a real test
+case went from 43cm to 102cm wide chasing a 104cm-wide target in 300
+iterations, >95% loss reduction). The silhouette path is gradient-correct but
+converges much more slowly when the start is far from the target — an expected
+property of sparse point-splat rendering (weak gradient signal without dense
+triangle coverage), not a bug; it works better given a closer initial guess or
+a coarse-to-fine `sigma_px` schedule. Prefer `fit_to_3d_scan` when you have scan
+data; reach for a production renderer (nvdiffrast/PyTorch3D) if you need robust
+silhouette fitting from a poor initial guess.
+
+**Scope:** fits one `PatternPiece` at a time, not a multi-panel garment with
+avatar placement/contact — that would route through Modules 2/3's
+(non-differentiable) Blender solver, which is exactly why this module needed
+its own lightweight differentiable simulator. Fit a full garment by calling
+this per piece.
 
 ## Data model
 
