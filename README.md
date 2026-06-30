@@ -18,7 +18,9 @@ for the full 10-module design.
 | 5. Variant System | Batch generation + PCA compression | ✅ implemented⁴ |
 | 6. Learned Deformation | TailorNet-style pose-conditioned net | ✅ implemented⁵ |
 | 7. Game Engine Integration | Customization, ONNX inference | ✅ implemented⁶ |
-| 8–10. AI extensions | Pattern gen, fabric prediction, diff. fitting | ⬜ optional |
+| 8. AI Pattern Generation | Photo/sketch/text → sewing pattern | ⬜ planned |
+| 9. AI Fabric Prediction | Text description → simulation parameters | ✅ implemented⁷ |
+| 10. Differentiable Fitting | Auto-refine patterns to match target | ⬜ optional |
 
 ¹ Module 2's geometry (landmark lookup, waist segments, placement math) is
 implemented and unit-tested with numpy. SMPL-X mesh generation needs the
@@ -50,6 +52,10 @@ file, so inference runs with neither torch nor onnxruntime.
 ⁶ Module 7 is pure numpy and fully tested: two deformation paths (PCA blend
 shapes / learned offsets), body masking + layering, texture customization, and
 wardrobe management. Only `ONNXDeformer` needs an external runtime (lazy import).
+
+⁷ Module 9's extended preset table and fuzzy matcher use only the Python stdlib
+(`difflib`) — no ML dependency for the common case. `FabricPredictor` (lazy
+`sentence-transformers` + `torch`) handles descriptions that don't match a preset.
 
 ## Install
 
@@ -213,6 +219,22 @@ Two paths share one `deform(DeformState)` interface — `PCADeformer` (blend
 shapes) or `LearnedDeformer`/`ONNXDeformer` (pose-conditioned offsets) — so the
 engine can swap them. Plus body masking/layering, texture customization
 (`apply_customization`), and `benchmark` for the per-garment budget.
+
+## AI fabric prediction (Module 9)
+
+```python
+from parametric_cloth.fabric import FabricProperties
+
+props = FabricProperties.from_description("heavy brushed cotton twill")
+```
+
+Fuzzy-matches free text against an extended preset table (20+ sub-variants of
+the six base fabrics, e.g. `cotton_twill`, `silk_charmeuse`, `denim_heavyweight`)
+using stdlib `difflib` — no ML dependency for the common case. Raises
+`LookupError` if nothing matches closely; for genuinely novel descriptions,
+train a `FabricPredictor` (needs `sentence-transformers` + `torch`) on
+`fabric_ai.training_pairs_from_presets()` plus any KES-F-measured data, then
+load its exported numpy weights — inference then needs neither dependency.
 
 ## Data model
 
