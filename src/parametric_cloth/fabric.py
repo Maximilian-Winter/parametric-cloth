@@ -47,6 +47,17 @@ class FabricProperties:
     def from_preset(cls, fabric_type: FabricType) -> "FabricProperties":
         return cls(type=fabric_type, **FABRIC_PRESETS[fabric_type])
 
+    @classmethod
+    def from_description(cls, description: str, **overrides) -> "FabricProperties":
+        """Resolve a free-text fabric description (Module 9: AI Fabric Prediction).
+
+        Tries the extended preset table with fuzzy matching first (no ML
+        dependency); raises ``LookupError`` if nothing matches closely enough.
+        """
+        from .fabric_ai.presets import fabric_from_description  # lazy: avoid a
+        # module-1 -> module-9 import at package load time.
+        return fabric_from_description(description, **overrides)
+
     def validate(self) -> list[str]:
         """Return a list of human-readable problems, empty if valid."""
         issues: list[str] = []

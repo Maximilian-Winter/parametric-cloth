@@ -18,7 +18,9 @@ for the full 10-module design.
 | 5. Variant System | Batch generation + PCA compression | ✅ implemented⁴ |
 | 6. Learned Deformation | TailorNet-style pose-conditioned net | ✅ implemented⁵ |
 | 7. Game Engine Integration | Customization, ONNX inference | ✅ implemented⁶ |
-| 8–10. AI extensions | Pattern gen, fabric prediction, diff. fitting | ⬜ optional |
+| 8. AI Pattern Generation | Photo/sketch/text → sewing pattern | ✅ implemented⁸ |
+| 9. AI Fabric Prediction | Text description → simulation parameters | ✅ implemented⁷ |
+| 10. Differentiable Fitting | Auto-refine patterns to match target | ✅ implemented⁹ |
 
 ¹ Module 2's geometry (landmark lookup, waist segments, placement math) is
 implemented and unit-tested with numpy. SMPL-X mesh generation needs the
@@ -50,6 +52,22 @@ file, so inference runs with neither torch nor onnxruntime.
 ⁶ Module 7 is pure numpy and fully tested: two deformation paths (PCA blend
 shapes / learned offsets), body masking + layering, texture customization, and
 wardrobe management. Only `ONNXDeformer` needs an external runtime (lazy import).
+
+⁷ Module 9's extended preset table and fuzzy matcher use only the Python stdlib
+(`difflib`) — no ML dependency for the common case. `FabricPredictor` (lazy
+`sentence-transformers` + `torch`) handles descriptions that don't match a preset.
+
+⁸ Module 8's GarmentCode adapter and rule-based refinement are pure and tested.
+The real SewFormer/ChatGarment backends need model weights not available here —
+`PatternGenerator` takes `backend=` as an injectable callable, so the
+orchestration (validation, GarmentCode conversion) is tested without them.
+
+⁹ No production differentiable-physics/-rendering framework (Warp, Taichi,
+DiffCloth, nvdiffrast, PyTorch3D) is available here, so Module 10 implements its
+own differentiable mass-spring simulator and soft-splat silhouette renderer in
+plain NumPy — gradients are hand-derived (not autodiff-generated) and verified
+against central finite differences. See the section below for what that buys
+and where it falls short of a production backend.
 
 ## Install
 
@@ -213,6 +231,107 @@ Two paths share one `deform(DeformState)` interface — `PCADeformer` (blend
 shapes) or `LearnedDeformer`/`ONNXDeformer` (pose-conditioned offsets) — so the
 engine can swap them. Plus body masking/layering, texture customization
 (`apply_customization`), and `benchmark` for the per-garment budget.
+
+## AI fabric prediction (Module 9)
+
+```python
+from parametric_cloth.fabric import FabricProperties
+
+props = FabricProperties.from_description("heavy brushed cotton twill")
+```
+
+Fuzzy-matches free text against an extended preset table (20+ sub-variants of
+the six base fabrics, e.g. `cotton_twill`, `silk_charmeuse`, `denim_heavyweight`)
+using stdlib `difflib` — no ML dependency for the common case. Raises
+`LookupError` if nothing matches closely; for genuinely novel descriptions,
+train a `FabricPredictor` (needs `sentence-transformers` + `torch`) on
+`fabric_ai.training_pairs_from_presets()` plus any KES-F-measured data, then
+load its exported numpy weights — inference then needs neither dependency.
+
+## AI pattern generation (Module 8)
+
+Photo, sketch, and text all converge on the same `GarmentDefinition` used by
+hand-authored templates, via a GarmentCode-shaped interchange format:
+
+```python
+from parametric_cloth.ai_pattern import PatternGenerator, garmentcode_to_definition
+
+generator = PatternGenerator()
+garment = generator.from_text("A-line midi skirt, 6 panels, high waist")  # needs a backend
+garment = generator.refine(garment, "make the sleeves wider and shorten the hem by 5cm")
+```
+
+The real backends (SewFormer for photos, ChatGarment for text/sketches) need
+model weights not available here, so calling `from_photo`/`from_sketch`/
+`from_text` without one raises `ModuleNotFoundError`. Pass `backend=` to inject
+a stand-in (for tests, or your own hosted endpoint) — the surrounding
+validation and `GarmentDefinition` conversion run either way.
+`generator.refine()` uses a deterministic rule-based fallback
+(`<action> <target> [by Xcm]`, e.g. "shorten the hem by 5cm") that edits pattern
+geometry directly; it recognizes simple numeric directives and leaves anything
+else unchanged rather than guessing — wire up an LLM backend for open-ended
+feedback the same way as the other `from_*` methods.
+
+`garmentcode_to_definition`/`definition_to_garmentcode` convert between this
+package's model and evaluated GarmentCode JSON (panels + vertices + stitches),
+the format SewFormer/ChatGarment outputs and GarmentCodeData uses. Note: full
+*programmatic* GarmentCode — panels defined by parametric edge generators —
+needs `pygarment` to evaluate; this adapter operates on the already-evaluated
+form.
+
+## Differentiable physics fitting (Module 10)
+
+Automatically refines a pattern piece's vertex positions to match a target
+silhouette or 3D scan, by backpropagating through a draping simulation:
+
+```python
+from parametric_cloth.fitting import DifferentiableClothFitter
+import numpy as np
+
+fitter = DifferentiableClothFitter(n_sim_steps=12, stiffness=40.0, regularization=0.001)
+fitted_garment = fitter.fit_to_3d_scan(garment, target_scan_vertices, piece_name="cape", n_iterations=200)
+```
+
+With no `torch`/Warp/Taichi/nvdiffrast/PyTorch3D available, this package
+implements its own differentiable physics from scratch:
+
+- **`DifferentiableMassSpring`** — a force-based mass-spring solver (semi-implicit
+  Euler) with a hand-derived reverse-mode gradient (the same chain-rule math an
+  autodiff framework would generate, written out by hand). Rest lengths are
+  computed fresh from the initial positions each call, so gradients correctly
+  flow through panel *scale*, not just post-drape position. Verified against
+  central finite differences to ~1e-10 on random spring systems and a real
+  tessellated panel.
+- **`SoftSplatRenderer`** — a simplified differentiable silhouette renderer:
+  orthographic projection + Gaussian point splatting, also with a hand-derived
+  gradient. Not a full differentiable rasterizer (no triangle coverage,
+  occlusion, or anti-aliasing) — it's a lightweight stand-in for
+  nvdiffrast/PyTorch3D sufficient to fit a rough silhouette.
+- **`chamfer_distance_and_grad`** — symmetric Chamfer distance with an analytic
+  gradient, for fitting against a 3D scan/point cloud.
+- A from-scratch **Adam** optimizer (trivial once gradients are analytic).
+
+Pinned vertices (the pattern's attachment edge, e.g. a waistband or neckline —
+configurable via `pin="min_y"`/`"max_y"`/explicit indices) are frozen both
+during simulation *and* in the optimizer, so fitting reshapes the panel without
+relocating its anchor.
+
+**Honest characterization from testing this end-to-end:** the Chamfer/3D-scan
+path converges robustly even from a very different starting shape (a real test
+case went from 43cm to 102cm wide chasing a 104cm-wide target in 300
+iterations, >95% loss reduction). The silhouette path is gradient-correct but
+converges much more slowly when the start is far from the target — an expected
+property of sparse point-splat rendering (weak gradient signal without dense
+triangle coverage), not a bug; it works better given a closer initial guess or
+a coarse-to-fine `sigma_px` schedule. Prefer `fit_to_3d_scan` when you have scan
+data; reach for a production renderer (nvdiffrast/PyTorch3D) if you need robust
+silhouette fitting from a poor initial guess.
+
+**Scope:** fits one `PatternPiece` at a time, not a multi-panel garment with
+avatar placement/contact — that would route through Modules 2/3's
+(non-differentiable) Blender solver, which is exactly why this module needed
+its own lightweight differentiable simulator. Fit a full garment by calling
+this per piece.
 
 ## Data model
 
