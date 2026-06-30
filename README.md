@@ -18,7 +18,7 @@ for the full 10-module design.
 | 5. Variant System | Batch generation + PCA compression | ✅ implemented⁴ |
 | 6. Learned Deformation | TailorNet-style pose-conditioned net | ✅ implemented⁵ |
 | 7. Game Engine Integration | Customization, ONNX inference | ✅ implemented⁶ |
-| 8. AI Pattern Generation | Photo/sketch/text → sewing pattern | ⬜ planned |
+| 8. AI Pattern Generation | Photo/sketch/text → sewing pattern | ✅ implemented⁸ |
 | 9. AI Fabric Prediction | Text description → simulation parameters | ✅ implemented⁷ |
 | 10. Differentiable Fitting | Auto-refine patterns to match target | ⬜ optional |
 
@@ -56,6 +56,11 @@ wardrobe management. Only `ONNXDeformer` needs an external runtime (lazy import)
 ⁷ Module 9's extended preset table and fuzzy matcher use only the Python stdlib
 (`difflib`) — no ML dependency for the common case. `FabricPredictor` (lazy
 `sentence-transformers` + `torch`) handles descriptions that don't match a preset.
+
+⁸ Module 8's GarmentCode adapter and rule-based refinement are pure and tested.
+The real SewFormer/ChatGarment backends need model weights not available here —
+`PatternGenerator` takes `backend=` as an injectable callable, so the
+orchestration (validation, GarmentCode conversion) is tested without them.
 
 ## Install
 
@@ -235,6 +240,37 @@ using stdlib `difflib` — no ML dependency for the common case. Raises
 train a `FabricPredictor` (needs `sentence-transformers` + `torch`) on
 `fabric_ai.training_pairs_from_presets()` plus any KES-F-measured data, then
 load its exported numpy weights — inference then needs neither dependency.
+
+## AI pattern generation (Module 8)
+
+Photo, sketch, and text all converge on the same `GarmentDefinition` used by
+hand-authored templates, via a GarmentCode-shaped interchange format:
+
+```python
+from parametric_cloth.ai_pattern import PatternGenerator, garmentcode_to_definition
+
+generator = PatternGenerator()
+garment = generator.from_text("A-line midi skirt, 6 panels, high waist")  # needs a backend
+garment = generator.refine(garment, "make the sleeves wider and shorten the hem by 5cm")
+```
+
+The real backends (SewFormer for photos, ChatGarment for text/sketches) need
+model weights not available here, so calling `from_photo`/`from_sketch`/
+`from_text` without one raises `ModuleNotFoundError`. Pass `backend=` to inject
+a stand-in (for tests, or your own hosted endpoint) — the surrounding
+validation and `GarmentDefinition` conversion run either way.
+`generator.refine()` uses a deterministic rule-based fallback
+(`<action> <target> [by Xcm]`, e.g. "shorten the hem by 5cm") that edits pattern
+geometry directly; it recognizes simple numeric directives and leaves anything
+else unchanged rather than guessing — wire up an LLM backend for open-ended
+feedback the same way as the other `from_*` methods.
+
+`garmentcode_to_definition`/`definition_to_garmentcode` convert between this
+package's model and evaluated GarmentCode JSON (panels + vertices + stitches),
+the format SewFormer/ChatGarment outputs and GarmentCodeData uses. Note: full
+*programmatic* GarmentCode — panels defined by parametric edge generators —
+needs `pygarment` to evaluate; this adapter operates on the already-evaluated
+form.
 
 ## Data model
 
