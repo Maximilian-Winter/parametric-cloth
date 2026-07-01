@@ -72,10 +72,19 @@ and where it falls short of a production backend.
 ## Install
 
 ```bash
-pip install -e .            # core (Module 1, pure standard library)
-pip install -e ".[dev]"     # + pytest
-pip install -e ".[avatar]"  # Module 2: numpy + smplx + torch + trimesh
+pip install -e .              # core (Module 1 is pure stdlib; everything else needs numpy, included)
+pip install -e ".[dev]"       # + pytest
+pip install -e ".[viz]"       # + matplotlib (pattern/drape/loss-curve plots)
+pip install -e ".[avatar]"    # Module 2: smplx + torch + trimesh
+pip install -e ".[learning]"  # Module 6: torch + onnx + onnxruntime
+pip install -e ".[fabric-ai]" # Module 9: sentence-transformers
 ```
+
+Run `parametric-cloth-doctor` any time to see which of these are installed and
+exactly which modules/features that unlocks (plus whether Blender is on PATH).
+
+See [`examples/`](examples/) for runnable scripts covering everything below
+that needs nothing beyond the base install.
 
 ## Quick start
 
@@ -332,6 +341,41 @@ avatar placement/contact — that would route through Modules 2/3's
 (non-differentiable) Blender solver, which is exactly why this module needed
 its own lightweight differentiable simulator. Fit a full garment by calling
 this per piece.
+
+## Tooling: drape preview, plots, and environment checks
+
+Three small additions aimed purely at making the rest of this easier to use —
+none change any module's behavior, they just remove setup friction.
+
+**Blender-free drape preview** (`parametric_cloth.preview`) reuses Module 10's
+differentiable mass-spring solver in forward-only mode as a quick sanity check
+— see how a single panel hangs with zero setup:
+
+```python
+from parametric_cloth.preview import preview_drape
+from parametric_cloth.templates import create_cape
+
+draped_vertices = preview_drape(create_cape().pieces[0])  # (V, 3) meters
+```
+
+It auto-orients the pinned attachment edge to the top regardless of which
+y-convention the template uses (skirts pin `min_y` at the waist, T-shirts pin
+`max_y` at the shoulder — see `templates.py`), and defaults to stiffer springs
+than the fitter (which is tuned for optimizability, not looks) so the result
+doesn't look stretchy. This drapes each piece **independently** — no seams, no
+avatar — it's a sanity check for one panel, not a substitute for Module 3.
+
+**Plotting helpers** (`parametric_cloth.viz`, needs `pip install -e ".[viz]"`)
+turn results into pictures instead of numbers: `plot_pattern_piece`/
+`plot_pattern_pieces` for 2D pattern outlines, `plot_draped_wireframe` for a 3D
+view of a draped mesh (e.g. from `preview_drape`), `plot_loss_curve` for a
+`FitResult.losses` curve. `matplotlib` is imported lazily, so the core package
+has no plotting dependency.
+
+**Environment check** (`parametric_cloth.envcheck`, console script
+`parametric-cloth-doctor`) reports which optional dependencies are installed
+and exactly what each one unlocks, plus whether `blender` is on `PATH` — the
+fastest way to answer "what can I actually run on this machine right now."
 
 ## Data model
 

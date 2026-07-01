@@ -12,21 +12,28 @@ license = { text = "MIT" }
 authors = [{ name = "Maximilian Winter" }]
 keywords = ["cloth", "simulation", "sewing-pattern", "smplx", "gamedev"]
 
-# Module 1 is pure standard library. Heavier modules (simulation, learning)
-# add their own optional dependency groups below as they are implemented.
-dependencies = []
+# Module 1 (patterns) is pure standard library. Every other module imports
+# numpy eagerly (not lazily), so it's a core dependency, not optional -- a
+# plain `pip install .` must be enough to `import parametric_cloth.engine`
+# (etc.) without also reaching for an extra.
+dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
-# Module 2 geometry core needs numpy; the SMPL-X generator/export add the rest.
-avatar = ["numpy>=1.24", "smplx>=0.1.28", "torch>=2.0", "trimesh>=4.0"]
-# Module 5 (PCA variant system) and beyond.
-numeric = ["numpy>=1.24", "scipy>=1.10", "scikit-learn>=1.3"]
-# Module 6 (learned deformation).
+# Module 2: SMPL-X avatar generation/export (the placement geometry itself
+# only needs numpy, already a core dependency).
+avatar = ["smplx>=0.1.28", "torch>=2.0", "trimesh>=4.0"]
+# Module 6: training and ONNX export/inference for the deformation model.
 learning = ["torch>=2.0", "onnx>=1.15", "onnxruntime>=1.17"]
+# Module 9: FabricPredictor's text-embedding backend, for descriptions that
+# don't fuzzy-match a preset.
+fabric-ai = ["sentence-transformers>=2.2"]
+# Plotting helpers (parametric_cloth.viz) and the example scripts.
+viz = ["matplotlib>=3.5"]
 dev = ["pytest>=7.0"]
 
 [project.scripts]
 create-garment = "parametric_cloth.cli:main"
+parametric-cloth-doctor = "parametric_cloth.envcheck:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
