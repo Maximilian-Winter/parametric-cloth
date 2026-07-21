@@ -16,3 +16,6 @@ avatars/
 *.glb
 *.npz
 *.onnx
+
+# Example script outputs (regenerate with python examples/07_garment_on_body.py)
+*.png

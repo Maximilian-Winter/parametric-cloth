@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from parametric_cloth import viz
-from parametric_cloth.preview import preview_drape
+from parametric_cloth.avatar.synthetic import make_simple_body
+from parametric_cloth.preview import preview_drape, preview_drape_garment_on_body
 from parametric_cloth.simulation.tessellate import tessellate_piece
 from parametric_cloth.templates import create_cape, create_skirt, create_tshirt
 
@@ -41,6 +42,14 @@ def test_plot_pattern_piece_skirt_panel():
     skirt = create_skirt(panels=4)
     ax = viz.plot_pattern_piece(skirt.pieces[0], show=False)
     assert ax.get_title() == "panel_0"
+
+
+def test_plot_garment_on_body_runs():
+    body = make_simple_body()
+    skirt = create_skirt(panels=6)
+    result = preview_drape_garment_on_body(skirt, body, pin="min_y", n_steps=20)
+    ax = viz.plot_garment_on_body(result, show=False, title="skirt")
+    assert ax is not None
 
 
 def test_missing_matplotlib_raises_clear_error(monkeypatch):

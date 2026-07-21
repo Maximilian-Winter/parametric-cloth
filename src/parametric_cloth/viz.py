@@ -99,6 +99,71 @@ def plot_draped_wireframe(
     return ax
 
 
+_PANEL_PALETTE = [
+    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
+]
+
+
+def plot_garment_on_body(preview, *, ax=None, show: bool = True, elev: float = 15,
+                         azim: float = -60, title: Optional[str] = None):
+    """3D plot of a :class:`~parametric_cloth.preview.DrapedGarmentPreview`.
+
+    Draws the body as a light gray wireframe and the garment on top, colored
+    per source pattern piece (one color per ``preview.vertex_panel`` id) so
+    seams between panels are visible.
+    """
+    plt = _require_matplotlib()
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: F401 (registers 3d proj)
+
+    if ax is None:
+        fig = plt.figure(figsize=(6, 8))
+        ax = fig.add_subplot(projection="3d")
+
+    # World coordinates are y-up (gravity is -y), but matplotlib's elev/azim
+    # treat *its* z-axis as vertical -- plotted as-is, no elev/azim choice
+    # makes world "up" read as screen-up, which makes a tall, roughly-
+    # cylindrical garment look like a squashed blob no matter the angle. Swap
+    # world y into matplotlib's z slot (and relabel) so the default-style
+    # viewing angles behave the way they look like they should.
+    def screen(v):
+        return v[:, 0], v[:, 2], v[:, 1]
+
+    body_v = preview.body.mesh.vertices
+    bx, by, bz = screen(body_v)
+    for face in preview.body.mesh.faces[::3]:      # thin out for a lighter body sketch
+        loop = list(face) + [face[0]]
+        ax.plot(bx[loop], by[loop], bz[loop], color="lightgray", linewidth=0.4, zorder=1)
+
+    vertices, faces, vertex_panel = preview.vertices, preview.faces, preview.vertex_panel
+    gx, gy, gz = screen(vertices)
+    face_panel = vertex_panel[faces[:, 0]]
+    for panel_id in np.unique(face_panel):
+        color = _PANEL_PALETTE[int(panel_id) % len(_PANEL_PALETTE)]
+        for face in faces[face_panel == panel_id]:
+            loop = list(face) + [face[0]]
+            ax.plot(gx[loop], gy[loop], gz[loop], color=color, linewidth=0.9, zorder=2)
+
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("z (m)")
+    ax.set_zlabel("height, world y (m)")
+    ax.view_init(elev=elev, azim=azim)
+    try:
+        # True-to-scale aspect (not a fixed ratio): an equal box would make a
+        # tall, narrow body look squashed and misleadingly "clumped."
+        all_v = np.vstack([vertices, body_v])
+        extents = all_v.max(axis=0) - all_v.min(axis=0)
+        extents = np.where(extents < 1e-6, 1e-6, extents)
+        ax.set_box_aspect((extents[0], extents[2], extents[1]))
+    except AttributeError:
+        pass
+    if title:
+        ax.set_title(title)
+    if show:
+        plt.show()
+    return ax
+
+
 def plot_loss_curve(losses: list[float], *, ax=None, show: bool = True, label: Optional[str] = None):
     """Plot a fitting loss curve (e.g. ``FitResult.losses``)."""
     plt = _require_matplotlib()

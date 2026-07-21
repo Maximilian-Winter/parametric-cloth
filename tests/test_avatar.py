@@ -39,8 +39,11 @@ def make_cylinder(radius=0.15, height=1.0, n_theta=48, n_levels=40, y0=0.0):
             b = li * n_theta + (ti + 1) % n_theta
             c = (li + 1) * n_theta + (ti + 1) % n_theta
             d = (li + 1) * n_theta + ti
-            faces.append((a, b, c))
-            faces.append((a, c, d))
+            # Winding gives an outward-facing normal (verified numerically);
+            # existing tests here only check normals are *radial*, not which
+            # way they point, so this was silently inward before.
+            faces.append((a, c, b))
+            faces.append((a, d, c))
     return AvatarMesh(np.array(verts, float), np.array(faces, np.int64))
 
 

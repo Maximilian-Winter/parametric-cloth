@@ -344,7 +344,7 @@ this per piece.
 
 ## Tooling: drape preview, plots, and environment checks
 
-Three small additions aimed purely at making the rest of this easier to use —
+A handful of additions aimed purely at making the rest of this easier to use —
 none change any module's behavior, they just remove setup friction.
 
 **Blender-free drape preview** (`parametric_cloth.preview`) reuses Module 10's
@@ -365,12 +365,59 @@ than the fitter (which is tuned for optimizability, not looks) so the result
 doesn't look stretchy. This drapes each piece **independently** — no seams, no
 avatar — it's a sanity check for one panel, not a substitute for Module 3.
 
+**Full garment on a body** (`preview_drape_garment_on_body`, also in
+`parametric_cloth.preview`) is the closest thing to the pipeline's actual
+promise — sewing pattern → 3D garment shape — runnable with nothing but numpy.
+It places every piece of a garment on a body using the *real* Module 2
+placement math, welds the seams with a pure-NumPy union-find weld
+(`simulation.weld.weld_vertices` — the same operation Blender's
+`remove_doubles` does after `weld_seams`), and settles the result under
+gravity with simple body collision:
+
+```python
+from parametric_cloth.avatar.synthetic import make_simple_body
+from parametric_cloth.preview import preview_drape_garment_on_body
+from parametric_cloth.templates import create_skirt
+
+body = make_simple_body()   # a simple torso+arms proxy -- no SMPL-X needed
+skirt = create_skirt(panels=8, waist_half=18, hip_half=24, length=45, flare=1.5)
+result = preview_drape_garment_on_body(skirt, body, pin="min_y", n_steps=150)
+# result.vertices/faces: a welded, gravity-draped 3D garment mesh
+```
+
+`make_simple_body` (`parametric_cloth.avatar.synthetic`) builds a torso+arm-stub
+`AvatarMesh` and resolves the anchors `create_tshirt`/`create_skirt` need
+(`chest_front`, `chest_back`, `left_upper_arm`, `right_upper_arm`, plus a waist
+height) directly against its own surface — it does **not** use SMPL-X vertex
+indices, so it works with zero model weights. See `examples/07_garment_on_body.py`
+for a full runnable example with rendering.
+
+Getting this right surfaced two real placement bugs, now fixed: a raw
+placement transform anchors a piece's *local origin*, but the piece is pinned
+at its opposite edge during draping (a T-shirt's shoulder is 65cm from its
+local origin at the hem) — left alone, the whole panel height was added on
+top of the anchor instead of hanging below it. And `basis_from_normal` always
+maps local +Y to world "up," which is backwards for skirts/capes (pinned at
+low local-y, with the hem at high local-y that should hang *down*). Both are
+fixed in `preview_drape_garment_on_body`.
+
+**Known limitation:** there's no cloth-vs-cloth self-collision, only
+garment-vs-body — a skirt (one continuous ring of panels) drapes cleanly, but
+a T-shirt's separately-hanging front and back panels can sag into each other
+since nothing stops one from passing through the other. Worth knowing before
+you rely on the visual result for anything but a rough preview.
+
 **Plotting helpers** (`parametric_cloth.viz`, needs `pip install -e ".[viz]"`)
 turn results into pictures instead of numbers: `plot_pattern_piece`/
 `plot_pattern_pieces` for 2D pattern outlines, `plot_draped_wireframe` for a 3D
-view of a draped mesh (e.g. from `preview_drape`), `plot_loss_curve` for a
-`FitResult.losses` curve. `matplotlib` is imported lazily, so the core package
-has no plotting dependency.
+view of a draped mesh (e.g. from `preview_drape`), `plot_garment_on_body` for a
+`DrapedGarmentPreview` (colored per pattern piece, body drawn alongside),
+`plot_loss_curve` for a `FitResult.losses` curve. `matplotlib` is imported
+lazily, so the core package has no plotting dependency. Note: world
+coordinates are y-up, but matplotlib's elev/azim treat *its* z-axis as
+vertical — `plot_garment_on_body` remaps world y into the z slot it plots so
+default-style viewing angles actually look right; a naive `ax.plot(x, y, z)`
+here will look like a squashed blob at almost any angle.
 
 **Environment check** (`parametric_cloth.envcheck`, console script
 `parametric-cloth-doctor`) reports which optional dependencies are installed
